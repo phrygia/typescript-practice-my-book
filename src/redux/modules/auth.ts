@@ -1,10 +1,9 @@
-import { createActions, handleActions } from "redux-actions";
-
-interface AuthState {
-  token: string | null;
-  loading: boolean;
-  error: Error | null;
-}
+import { push } from 'connected-react-router';
+import { Action, createActions, handleActions } from 'redux-actions';
+import { call, put, select, takeEvery } from 'redux-saga/effects';
+import TokenSevice from '../../services/TokenService';
+import UserService from '../../services/UserService';
+import { LoginReqType, AuthState } from '../../types';
 
 const initialState: AuthState = {
   token: null,
@@ -12,19 +11,18 @@ const initialState: AuthState = {
   error: null,
 };
 
-const prefix = "my-books/auth";
+const prefix = 'my-books/auth';
 
 export const { pending, success, fail } = createActions(
-  "PENDING",
-  "SUCCESS",
-  "FAIL",
-  { prefix }
+  'PENDING',
+  'SUCCESS',
+  'FAIL',
+  { prefix },
 );
 
-//reducer <제네릭, payload의 타입>
 const reducer = handleActions<AuthState, string>(
   {
-    PENDING: (state) => ({
+    PENDING: state => ({
       ...state,
       loading: true,
       error: null,
@@ -41,10 +39,45 @@ const reducer = handleActions<AuthState, string>(
     }),
   },
   initialState,
-  { prefix }
+  { prefix },
 );
 
 export default reducer;
 
 // saga
-export function* authSaga() {}
+export const { login, logout } = createActions('LOGIN', 'LOGOUT', { prefix });
+
+function* loginSaga(action: Action<LoginReqType>) {
+  try {
+    yield put(pending());
+    const token: string = yield call(UserService.login, action.payload);
+
+    // localstrage
+    TokenSevice.set(token);
+    yield put(success(token));
+
+    // push
+    yield put(push('/'));
+  } catch (error: any) {
+    yield put(
+      fail(new Error(error?.response?.data?.error || 'UNKNWON ERROR..')),
+    );
+  }
+}
+function* logoutSaga() {
+  try {
+    yield put(pending());
+    const token: string = yield select(state => state.auth.token);
+    yield call(UserService.logout, token);
+    TokenSevice.set(token);
+  } catch (error: any) {
+  } finally {
+    TokenSevice.remove();
+    yield put(success(null));
+  }
+}
+
+export function* authSaga() {
+  yield takeEvery(`${prefix}/LOGIN`, loginSaga);
+  yield takeEvery(`${prefix}/LOGOUT`, logoutSaga);
+}
